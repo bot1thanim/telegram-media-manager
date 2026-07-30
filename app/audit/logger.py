@@ -60,6 +60,7 @@ class AuditAction:
     Catalogue of all audit action strings (SRS §31).
     Using a class of constants prevents typos and enables IDE auto-complete.
     """
+
     MEDIA_IMPORTED = "MEDIA_IMPORTED"
     MEDIA_IMPORTED_DIRECT_TO_CATEGORY = "MEDIA_IMPORTED_DIRECT_TO_CATEGORY"
     MEDIA_CATEGORIZED = "MEDIA_CATEGORIZED"

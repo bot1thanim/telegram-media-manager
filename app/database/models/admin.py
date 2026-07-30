@@ -6,10 +6,11 @@ Stores Admins and Viewers (not the Owner — Owner is defined by env var).
 """
 
 from datetime import datetime, timezone
-from sqlalchemy import BigInteger, Integer, Text
-from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import JSON
+
+from sqlalchemy import JSON, BigInteger, Integer, Text
 from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.orm import Mapped, mapped_column
+
 from app.database.base import Base
 
 
@@ -26,7 +27,9 @@ class Admin(Base):
     __tablename__ = "admins"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    telegram_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
+    telegram_user_id: Mapped[int] = mapped_column(
+        BigInteger, unique=True, nullable=False
+    )
     username: Mapped[str | None] = mapped_column(Text, nullable=True)
     display_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     role: Mapped[str] = mapped_column(Text, nullable=False, default="admin")

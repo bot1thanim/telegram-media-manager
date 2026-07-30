@@ -6,9 +6,11 @@ Records metadata about each backup operation.
 """
 
 from datetime import datetime, timezone
+
 from sqlalchemy import BigInteger, Integer, Text
-from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.orm import Mapped, mapped_column
+
 from app.database.base import Base
 
 

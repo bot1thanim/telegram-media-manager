@@ -5,9 +5,11 @@ SQLAlchemy model for the `categories` table.
 """
 
 from datetime import datetime, timezone
-from sqlalchemy import BigInteger, Boolean, Integer, Text, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from sqlalchemy import BigInteger, Boolean, Integer, Text
 from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database.base import Base
 
 
@@ -20,7 +22,9 @@ class Category(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    telegram_thread_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, nullable=True)
+    telegram_thread_id: Mapped[int | None] = mapped_column(
+        BigInteger, unique=True, nullable=True
+    )
     emoji: Mapped[str | None] = mapped_column(Text, nullable=True)
     topic_missing: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

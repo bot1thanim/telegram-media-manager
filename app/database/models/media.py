@@ -7,11 +7,11 @@ Includes the MediaStatus enum that represents the full state machine.
 
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import (
-    BigInteger, Boolean, Integer, Text, ForeignKey, Index
-)
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from sqlalchemy import BigInteger, ForeignKey, Index, Integer, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database.base import Base
 
 
@@ -27,6 +27,7 @@ class MediaStatus(str, enum.Enum):
     Any state → DELETED (soft delete / recycle bin)
     Any publish attempt with expired file_id → BROKEN
     """
+
     NEW = "NEW"
     WAITING_CATEGORIZATION = "WAITING_CATEGORIZATION"
     CATEGORIZED = "CATEGORIZED"
@@ -43,6 +44,11 @@ class MediaType(str, enum.Enum):
 
 class Media(Base):
     __tablename__ = "media"
+    __table_args__ = (
+        UniqueConstraint("file_unique_id", name="uq_media_file_unique_id"),
+        Index("ix_media_category_id", "category_id"),
+        Index("ix_media_status_category", "status", "category_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     file_id: Mapped[str] = mapped_column(Text, nullable=False)
@@ -94,12 +100,3 @@ class Media(Base):
 
     def __repr__(self) -> str:
         return f"<Media id={self.id} type={self.media_type} status={self.status}>"
-
-
-# Indexes (defined at table level via __table_args__ for clarity)
-Media.__table_args__ = (
-    Index("ix_media_file_unique_id", "file_unique_id"),
-    Index("ix_media_status", "status"),
-    Index("ix_media_category_id", "category_id"),
-    Index("ix_media_status_category", "status", "category_id"),
-)

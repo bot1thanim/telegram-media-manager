@@ -8,22 +8,23 @@ SRS §7, §7.1
 """
 
 import logging
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable, Any
 
-from telegram import Update
-from telegram.ext import ContextTypes
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from telegram import Update
+from telegram.ext import ContextTypes
 
-from app.database.models.admin import Admin
 from app.database.engine import get_session
+from app.database.models.admin import Admin
 
 logger = logging.getLogger(__name__)
 
 
 class Permission:
     """Permission key constants matching SRS §7.1 JSON keys."""
+
     IMPORT = "import"
     CATEGORIZE = "categorize"
     PUBLISH = "publish"
@@ -123,37 +124,49 @@ def require_permission(permission: str):
     Decorator for Telegram handlers to enforce permissions.
     SRS §7.1
     """
+
     def decorator(func: Callable):
         @wraps(func)
-        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        async def wrapper(
+            update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs
+        ):
             from app.config import config
             from app.telegram.messages import MSG
-            
+
             user = update.effective_user
             if not user:
                 return
 
             async with get_session() as session:
-                has_perm = await has_permission(session, user.id, config.OWNER_TELEGRAM_ID, permission)
+                has_perm = await has_permission(
+                    session, user.id, config.OWNER_TELEGRAM_ID, permission
+                )
                 if not has_perm:
                     if update.callback_query:
-                        await update.callback_query.answer(MSG.UNAUTHORIZED, show_alert=True)
+                        await update.callback_query.answer(
+                            MSG.UNAUTHORIZED, show_alert=True
+                        )
                     else:
                         await update.message.reply_text(MSG.UNAUTHORIZED)
                     return
-            
+
             return await func(update, context, *args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
 def owner_only(func: Callable):
     """Decorator for owner-only actions (Settings, Admins)."""
+
     @wraps(func)
-    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+    async def wrapper(
+        update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs
+    ):
         from app.config import config
         from app.telegram.messages import MSG
-        
+
         user = update.effective_user
         if not user or user.id != config.OWNER_TELEGRAM_ID:
             if update.callback_query:
@@ -161,6 +174,7 @@ def owner_only(func: Callable):
             else:
                 await update.message.reply_text(MSG.UNAUTHORIZED)
             return
-            
+
         return await func(update, context, *args, **kwargs)
+
     return wrapper

@@ -5,9 +5,11 @@ SQLAlchemy models for `tags` and `media_tags` (many-to-many join table).
 """
 
 from datetime import datetime, timezone
-from sqlalchemy import Integer, Text, ForeignKey, Table, Column
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from sqlalchemy import Column, ForeignKey, Integer, Table, Text
 from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database.base import Base
 
 
@@ -19,8 +21,15 @@ def _utcnow():
 media_tags = Table(
     "media_tags",
     Base.metadata,
-    Column("media_id", Integer, ForeignKey("media.id", ondelete="CASCADE"), primary_key=True),
-    Column("tag_id", Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "media_id",
+        Integer,
+        ForeignKey("media.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "tag_id", Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True
+    ),
 )
 
 

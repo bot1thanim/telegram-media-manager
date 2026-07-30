@@ -6,9 +6,11 @@ SQLAlchemy models for `duplicate_groups` and `duplicate_group_members`.
 
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import Integer, Text, ForeignKey, Table, Column
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from sqlalchemy import Column, ForeignKey, Integer, Table, Text
 from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database.base import Base
 
 
@@ -25,8 +27,18 @@ class DuplicateGroupStatus(str, enum.Enum):
 duplicate_group_members = Table(
     "duplicate_group_members",
     Base.metadata,
-    Column("media_id", Integer, ForeignKey("media.id", ondelete="RESTRICT"), primary_key=True),
-    Column("group_id", Integer, ForeignKey("duplicate_groups.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "media_id",
+        Integer,
+        ForeignKey("media.id", ondelete="RESTRICT"),
+        primary_key=True,
+    ),
+    Column(
+        "group_id",
+        Integer,
+        ForeignKey("duplicate_groups.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
 )
 
 

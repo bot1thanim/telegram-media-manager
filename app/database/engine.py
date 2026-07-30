@@ -6,8 +6,8 @@ All database access in the application goes through `get_session()`.
 """
 
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -34,7 +34,7 @@ def init_engine(database_url: str) -> None:
     _engine = create_async_engine(
         database_url,
         echo=False,
-        pool_pre_ping=True,       # detect stale connections
+        pool_pre_ping=True,  # detect stale connections
         pool_size=5,
         max_overflow=10,
     )
@@ -52,7 +52,9 @@ def init_engine(database_url: str) -> None:
 
 def get_engine() -> AsyncEngine:
     if _engine is None:
-        raise RuntimeError("Database engine has not been initialised. Call init_engine() first.")
+        raise RuntimeError(
+            "Database engine has not been initialised. Call init_engine() first."
+        )
     return _engine
 
 
@@ -66,7 +68,9 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
             result = await session.execute(...)
     """
     if _session_factory is None:
-        raise RuntimeError("Session factory has not been initialised. Call init_engine() first.")
+        raise RuntimeError(
+            "Session factory has not been initialised. Call init_engine() first."
+        )
 
     async with _session_factory() as session:
         try:

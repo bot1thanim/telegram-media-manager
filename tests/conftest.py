@@ -4,16 +4,17 @@ tests/conftest.py
 Shared pytest fixtures for unit and integration tests.
 """
 
+from unittest.mock import AsyncMock
+
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from app.database.base import Base
 import app.database.models  # noqa: F401 — register all models
-
+from app.database.base import Base
 
 # ─── In-memory SQLite database for unit tests ─────────────────────────────────
+
 
 @pytest_asyncio.fixture(scope="function")
 async def db_engine():
@@ -47,6 +48,7 @@ async def db_session(db_engine):
 
 # ─── Mock Telegram Bot ────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def mock_bot():
     """A mock Telegram Bot instance."""
@@ -62,6 +64,7 @@ def mock_bot():
 
 
 # ─── Owner ID fixture ─────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def owner_id() -> int:

@@ -1,23 +1,36 @@
-"""
-app/telegram/handlers/sorting_handler.py
-==========================================
-Handlers for the sorting flow.
-SRS §10, §10.1, §10.2: Sorting screen, handoff, categorization.
-"""
+"""Telegram handlers for the controlled media-sorting workflow."""
+
+from __future__ import annotations
 
 import logging
-from telegram import Update
-from telegram.ext import ContextTypes, CallbackQueryHandler
 
-from app.config import config
+from telegram import Update
+from telegram.ext import CallbackQueryHandler, ContextTypes
+
 from app.database.engine import get_session
-from app.services.media_service import (
-    get_next_media_for_sorting, get_media_by_id, categorize_media, move_to_recycle_bin
-)
+from app.database.models.category import Category
 from app.services.category_service import get_all_categories
-from app.services.sorting_service import handle_handoff, confirm_handoff, start_or_update_session, end_session
+from app.services.media_service import (
+    categorize_media,
+    get_media_by_id,
+    get_next_media_for_sorting,
+    move_to_recycle_bin,
+)
 from app.services.permission_service import Permission, require_permission
-from app.telegram.keyboards import CB, sorting_item_keyboard, category_select_keyboard, handoff_keyboard, main_menu_keyboard
+from app.services.sorting_service import (
+    confirm_handoff,
+    end_session,
+    get_session_for_admin,
+    handle_handoff,
+    start_or_update_session,
+)
+from app.telegram.keyboards import (
+    CB,
+    category_select_keyboard,
+    handoff_keyboard,
+    main_menu_keyboard,
+    sorting_item_keyboard,
+)
 from app.telegram.messages import MSG
 
 logger = logging.getLogger(__name__)
@@ -25,166 +38,271 @@ logger = logging.getLogger(__name__)
 
 @require_permission(Permission.CATEGORIZE)
 async def start_sorting(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Triggered by 'מיון חדש' or 'המשך מיון'."""
+    """Start a new session or resume the requester's current media item."""
     query = update.callback_query
     user_id = update.effective_user.id
-    
+
     async with get_session() as session:
-        # 1. Check for active session (Handoff logic §10.2)
-        needs_confirm, active_session = await handle_handoff(session, user_id, update.effective_user.full_name)
-        
-        if needs_confirm:
+        needs_confirm, active_session = await handle_handoff(
+            session, user_id, update.effective_user.full_name
+        )
+        if needs_confirm and active_session is not None:
+            context.user_data["handoff_media_id"] = active_session.current_media_id
+            context.user_data["handoff_old_admin"] = active_session.admin_telegram_id
             await query.answer()
             await query.edit_message_text(
                 MSG.HANDOFF_PROMPT.format(
-                    name=active_session.admin_telegram_id, # Should fetch name in real app
-                    media_id=active_session.current_media_id
+                    name=active_session.admin_telegram_id,
+                    media_id=active_session.current_media_id,
                 ),
-                reply_markup=handoff_keyboard()
+                reply_markup=handoff_keyboard(),
             )
-            context.user_data["handoff_media_id"] = active_session.current_media_id
-            context.user_data["handoff_old_admin"] = active_session.admin_telegram_id
             return
 
-        # 2. Get next item
         media = None
-        if query.data == CB.SORT_RESUME and active_session:
+        if query.data == CB.SORT_RESUME and active_session is not None:
             media = await get_media_by_id(session, active_session.current_media_id)
-            
-        if not media:
+        if media is None:
             media = await get_next_media_for_sorting(session)
-
-        if not media:
+        if media is None:
             await query.answer(MSG.SORT_EMPTY, show_alert=True)
             return
 
-        # 3. Start session
         await start_or_update_session(session, user_id, media.id)
+        await query.answer()
         await _show_sorting_item(update, context, media)
 
 
-async def _show_sorting_item(update: Update, context: ContextTypes.DEFAULT_TYPE, media) -> None:
-    """Display a single media item with sorting controls."""
+@require_permission(Permission.CATEGORIZE)
+async def confirm_handoff_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Transfer an active sorting session only after explicit confirmation."""
     query = update.callback_query
-    
-    caption = MSG.SORT_ITEM_CAPTION.format(
-        id=media.id,
-        size=round(media.file_size / (1024 * 1024), 2),
-        duration_line=MSG.SORT_DURATION_LINE.format(duration=media.duration) if media.duration else "",
-        date=media.created_at.strftime("%d/%m/%Y"),
-        uploader=media.uploader_name or "Unknown"
+    user_id = update.effective_user.id
+    media_id = context.user_data.pop("handoff_media_id", None)
+    old_admin_id = context.user_data.pop("handoff_old_admin", None)
+    if not isinstance(media_id, int) or not isinstance(old_admin_id, int):
+        await query.answer(MSG.NO_ACTIVE_SESSION, show_alert=True)
+        return
+
+    async with get_session() as session:
+        media = await get_media_by_id(session, media_id)
+        if media is None:
+            await query.answer(MSG.SORT_CONCURRENT_CONFLICT, show_alert=True)
+            return
+        await confirm_handoff(session, user_id, old_admin_id, media_id)
+        await query.answer()
+        await _show_sorting_item(update, context, media)
+
+
+@require_permission(Permission.CATEGORIZE)
+async def cancel_handoff_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Clear pending handoff state and return safely to the main menu."""
+    query = update.callback_query
+    context.user_data.pop("handoff_media_id", None)
+    context.user_data.pop("handoff_old_admin", None)
+    await query.answer(MSG.CANCELLED)
+    await query.edit_message_text(
+        MSG.MAIN_MENU_WELCOME, reply_markup=main_menu_keyboard()
     )
 
-    # We must delete the old message and send a new one because we are sending media
-    # You cannot 'edit' a text message into a media message in Telegram.
-    await query.message.delete()
-    
+
+async def _show_sorting_item(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, media
+) -> None:
+    """Replace the previous control message with the selected Telegram media item."""
+    query = update.callback_query
+    size_megabytes = (media.file_size_bytes or 0) / (1024 * 1024)
+    duration_line = (
+        MSG.SORT_DURATION_LINE.format(duration=media.duration_seconds)
+        if media.duration_seconds is not None
+        else ""
+    )
+    caption = MSG.SORT_ITEM_CAPTION.format(
+        id=media.id,
+        size=round(size_megabytes, 2),
+        duration_line=duration_line,
+        date=media.created_at.strftime("%d/%m/%Y"),
+        uploader=str(media.uploaded_by_user_id or "Unknown"),
+    )
+
+    try:
+        await query.message.delete()
+    except Exception:
+        logger.debug("Previous sorting message was already unavailable", exc_info=True)
+
     common_kwargs = {
         "chat_id": update.effective_chat.id,
         "caption": caption,
-        "reply_markup": sorting_item_keyboard()
+        "reply_markup": sorting_item_keyboard(),
     }
-
     if media.media_type == "video":
         await context.bot.send_video(video=media.file_id, **common_kwargs)
     elif media.media_type == "photo":
         await context.bot.send_photo(photo=media.file_id, **common_kwargs)
-    elif media.media_type == "animation":
-        await context.bot.send_animation(animation=media.file_id, **common_kwargs)
     else:
         await context.bot.send_document(document=media.file_id, **common_kwargs)
 
 
-async def sort_action_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles buttons: Save, Skip, Delete, Next, Prev."""
+@require_permission(Permission.CATEGORIZE)
+async def sort_action_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle saving, skipping, deleting and advancing the active media item."""
     query = update.callback_query
     action = query.data
     user_id = update.effective_user.id
 
     async with get_session() as session:
-        # Get current session to know which media we are on
-        # In a real app, we'd extract media_id from the caption or callback_data
-        # For this MVP, we assume the session tracking is enough
-        result = await session.execute(
-            select(SortingSession).where(SortingSession.admin_telegram_id == user_id)
-        )
-        active = result.scalar_one_or_none()
-        if not active:
-            await query.answer(MSG.NO_ACTIVE_SESSION)
+        active = await get_session_for_admin(session, user_id)
+        if active is None or active.current_media_id is None:
+            await query.answer(MSG.NO_ACTIVE_SESSION, show_alert=True)
             return
-
         media_id = active.current_media_id
 
         if action == CB.SORT_SAVE:
-            # Show category selection
             categories = await get_all_categories(session)
             await query.answer()
-            # Since we are on a media message, we can't edit text. 
-            # We send a new message for category selection.
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text=MSG.SORT_CHOOSE_CATEGORY,
-                reply_markup=category_select_keyboard(categories)
+                reply_markup=category_select_keyboard(categories, include_create=False),
             )
             return
 
-        elif action == CB.SORT_DELETE:
+        if action == CB.SORT_DELETE:
             await move_to_recycle_bin(session, media_id, user_id)
             await query.answer(MSG.SORT_DELETED)
-            # Move to next
-            next_media = await get_next_media_for_sorting(session)
-            if next_media:
-                await start_or_update_session(session, user_id, next_media.id)
-                await _show_sorting_item(update, context, next_media)
-            else:
-                await end_session(session, user_id)
-                await context.bot.send_message(update.effective_chat.id, MSG.SORT_EMPTY)
+        elif action in {CB.SORT_SKIP, CB.SORT_NEXT}:
+            await query.answer()
+        else:
+            await query.answer(MSG.ERROR_GENERIC, show_alert=True)
             return
 
-        elif action == CB.SORT_SKIP or action == CB.SORT_NEXT:
-            next_media = await get_next_media_for_sorting(session, exclude_ids=[media_id])
-            if next_media:
-                await start_or_update_session(session, user_id, next_media.id)
-                await _show_sorting_item(update, context, next_media)
-            else:
-                await query.answer(MSG.SORT_EMPTY)
+        next_media = await get_next_media_for_sorting(session, exclude_ids=[media_id])
+        if next_media is None:
+            await end_session(session, user_id)
+            await context.bot.send_message(update.effective_chat.id, MSG.SORT_EMPTY)
             return
+        await start_or_update_session(session, user_id, next_media.id)
+        await _show_sorting_item(update, context, next_media)
 
 
-async def category_selection_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles the actual saving to a category."""
+@require_permission(Permission.CATEGORIZE)
+async def show_category_page(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Render a requested category page for the active sorting session."""
     query = update.callback_query
-    category_id = int(query.data.split(":")[1])
+    try:
+        page = max(0, int(query.data.removeprefix(CB.SORT_PAGE)))
+    except ValueError:
+        await query.answer(MSG.ERROR_GENERIC, show_alert=True)
+        return
+    async with get_session() as session:
+        categories = await get_all_categories(session)
+    await query.answer()
+    await query.edit_message_reply_markup(
+        reply_markup=category_select_keyboard(
+            categories, page=page, include_create=False
+        )
+    )
+
+
+@require_permission(Permission.CATEGORIZE)
+async def return_to_current_sort_item(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Return from category selection to the media owned by the requester."""
+    query = update.callback_query
     user_id = update.effective_user.id
+    async with get_session() as session:
+        active = await get_session_for_admin(session, user_id)
+        media = (
+            await get_media_by_id(session, active.current_media_id)
+            if active is not None and active.current_media_id is not None
+            else None
+        )
+    if media is None:
+        await query.answer(MSG.NO_ACTIVE_SESSION, show_alert=True)
+        return
+    await query.answer()
+    await _show_sorting_item(update, context, media)
+
+
+@require_permission(Permission.CATEGORIZE)
+async def category_selection_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Categorize the current item, then safely advance the session."""
+    query = update.callback_query
+    user_id = update.effective_user.id
+    try:
+        category_id = int(query.data.removeprefix(CB.SORT_CAT_SELECT))
+    except ValueError:
+        await query.answer(MSG.ERROR_GENERIC, show_alert=True)
+        return
 
     async with get_session() as session:
-        result = await session.execute(
-            select(SortingSession).where(SortingSession.admin_telegram_id == user_id)
-        )
-        active = result.scalar_one_or_none()
-        if not active:
-            await query.answer(MSG.NO_ACTIVE_SESSION)
+        active = await get_session_for_admin(session, user_id)
+        if active is None or active.current_media_id is None:
+            await query.answer(MSG.NO_ACTIVE_SESSION, show_alert=True)
             return
-
-        media = await categorize_media(session, active.current_media_id, category_id, user_id)
+        try:
+            await categorize_media(
+                session, active.current_media_id, category_id, user_id
+            )
+        except ValueError:
+            await query.answer(MSG.SORT_CONCURRENT_CONFLICT, show_alert=True)
+            return
         category = await session.get(Category, category_id)
-        
-        await query.answer(MSG.SORT_SAVED.format(category_name=category.name))
-        
-        # Move to next
+        await query.answer(
+            MSG.SORT_SAVED.format(
+                category_name=category.name if category else str(category_id)
+            )
+        )
         next_media = await get_next_media_for_sorting(session)
-        if next_media:
-            await start_or_update_session(session, user_id, next_media.id)
-            await _show_sorting_item(update, context, next_media)
-        else:
+        if next_media is None:
             await end_session(session, user_id)
-            await query.edit_message_text(MSG.SORT_EMPTY, reply_markup=main_menu_keyboard())
+            await query.edit_message_text(
+                MSG.SORT_EMPTY, reply_markup=main_menu_keyboard()
+            )
+            return
+        await start_or_update_session(session, user_id, next_media.id)
+        await _show_sorting_item(update, context, next_media)
 
 
 def register_sorting_handlers(application) -> None:
-    from sqlalchemy import select
-    from app.database.models.sorting_session import SortingSession
-    
-    application.add_handler(CallbackQueryHandler(start_sorting, pattern=f"^{CB.SORT_NEW}$|^{CB.SORT_RESUME}$"))
-    application.add_handler(CallbackQueryHandler(sort_action_handler, pattern=f"^{CB.SORT_SAVE}$|^{CB.SORT_SKIP}$|^{CB.SORT_DELETE}$|^{CB.SORT_NEXT}$"))
-    application.add_handler(CallbackQueryHandler(category_selection_handler, pattern=f"^{CB.SORT_CAT_SELECT}"))
+    application.add_handler(
+        CallbackQueryHandler(
+            start_sorting, pattern=f"^{CB.SORT_NEW}$|^{CB.SORT_RESUME}$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(confirm_handoff_handler, pattern=f"^{CB.HANDOFF_CONFIRM}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(cancel_handoff_handler, pattern=f"^{CB.HANDOFF_CANCEL}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            sort_action_handler,
+            pattern=f"^{CB.SORT_SAVE}$|^{CB.SORT_SKIP}$|^{CB.SORT_DELETE}$|^{CB.SORT_NEXT}$",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            category_selection_handler, pattern=f"^{CB.SORT_CAT_SELECT}"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(show_category_page, pattern=f"^{CB.SORT_PAGE}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            return_to_current_sort_item, pattern=f"^{CB.SORT_CAT_BACK}$"
+        )
+    )

@@ -6,9 +6,19 @@ SQLAlchemy models for `publish_jobs` and `publish_queue_items`.
 
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import BigInteger, Boolean, Integer, Text, ForeignKey, Index
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database.base import Base
 
 
@@ -27,6 +37,7 @@ class PublishJobStatus(str, enum.Enum):
 
 class PublishQueueItemState(str, enum.Enum):
     PENDING = "PENDING"
+    SENDING = "SENDING"
     SENT = "SENT"
     FAILED = "FAILED"
     SKIPPED = "SKIPPED"
@@ -34,12 +45,18 @@ class PublishQueueItemState(str, enum.Enum):
 
 class PublishJob(Base):
     __tablename__ = "publish_jobs"
+    __table_args__ = (
+        Index("ix_publish_jobs_status", "status"),
+        Index("ix_publish_jobs_scheduled", "is_scheduled", "scheduled_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     status: Mapped[str] = mapped_column(
         Text, nullable=False, default=PublishJobStatus.QUEUED.value
     )
-    scope: Mapped[str | None] = mapped_column(Text, nullable=True)  # "all" or category name
+    scope: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # "all" or category name
     scope_category_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
     )
@@ -63,7 +80,10 @@ class PublishJob(Base):
 
     # Relationships
     queue_items: Mapped[list["PublishQueueItem"]] = relationship(
-        "PublishQueueItem", back_populates="job", cascade="all, delete-orphan", lazy="select"
+        "PublishQueueItem",
+        back_populates="job",
+        cascade="all, delete-orphan",
+        lazy="select",
     )
 
     def __repr__(self) -> str:
@@ -72,6 +92,12 @@ class PublishJob(Base):
 
 class PublishQueueItem(Base):
     __tablename__ = "publish_queue_items"
+    __table_args__ = (
+        UniqueConstraint("job_id", "media_id", name="uq_pqi_job_media"),
+        UniqueConstraint("job_id", "position", name="uq_pqi_job_position"),
+        Index("ix_pqi_job_state", "job_id", "state"),
+        Index("ix_pqi_job_position", "job_id", "position"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[int] = mapped_column(
@@ -98,9 +124,3 @@ class PublishQueueItem(Base):
             f"job={self.job_id} media={self.media_id} "
             f"pos={self.position} state={self.state}>"
         )
-
-
-PublishQueueItem.__table_args__ = (
-    Index("ix_pqi_job_state", "job_id", "state"),
-    Index("ix_pqi_job_position", "job_id", "position"),
-)

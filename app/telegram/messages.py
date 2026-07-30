@@ -23,11 +23,7 @@ class MSG:
 
     # --- Sorting ---
     SORT_ITEM_CAPTION = (
-        "פריט #{id}\n"
-        "גודל: {size} MB\n"
-        "{duration_line}"
-        "הועלה: {date}\n"
-        "על ידי: {uploader}"
+        "פריט #{id}\nגודל: {size} MB\n{duration_line}הועלה: {date}\nעל ידי: {uploader}"
     )
     SORT_DURATION_LINE = "משך: {duration} שניות\n"
     SORT_SAVED = "✅ נשמר בקטגוריה: {category_name}"
@@ -48,7 +44,9 @@ class MSG:
     # --- Categories ---
     CATEGORIES_MENU = "🗂 ניהול נושאים — בחר קטגוריה או צור חדשה:"
     CATEGORY_CREATE_NAME_PROMPT = "הזן שם לקטגוריה החדשה:"
-    CATEGORY_LINK_NOW_PROMPT = "האם לקשר קטגוריה זו ל-Topic קיים עכשיו, או לדלג ולקשר מאוחר יותר?"
+    CATEGORY_LINK_NOW_PROMPT = (
+        "האם לקשר קטגוריה זו ל-Topic קיים עכשיו, או לדלג ולקשר מאוחר יותר?"
+    )
     CATEGORY_LINKED = "✅ הקטגוריה '{name}' קושרה בהצלחה ל-Topic '{topic_name}'."
     CATEGORY_RENAME_PROMPT = "הזן שם חדש לקטגוריה '{name}':"
     CATEGORY_RENAMED = "✅ הקטגוריה שונתה ל-'{name}'."
@@ -72,9 +70,7 @@ class MSG:
     # --- Publishing ---
     PUBLISH_MENU = "🚀 תפריט פרסום — בחר פעולה:"
     PUBLISH_CHOOSE_ORDER = "בחר סדר פרסום:"
-    PUBLISH_DRY_RUN_HEADER = (
-        "תצוגה מקדימה — כך ייראה סדר הפרסום (לא נשלח דבר בפועל):"
-    )
+    PUBLISH_DRY_RUN_HEADER = "תצוגה מקדימה — כך ייראה סדר הפרסום (לא נשלח דבר בפועל):"
     PUBLISH_PROGRESS = (
         "🚀 מפרסם ל: {category}\n"
         "{bar} {pct}% ({done}/{total})\n"
@@ -86,8 +82,7 @@ class MSG:
         "נשלחו: {sent}, נכשלו: {failed}, דולגו: {skipped}."
     )
     PUBLISH_BROKEN_DM = (
-        "⚠️ פריט #{id} לא ניתן לפרסום — הקובץ פג תוקף בטלגרם. "
-        "הפריט סומן כ'שבור'."
+        "⚠️ פריט #{id} לא ניתן לפרסום — הקובץ פג תוקף בטלגרם. הפריט סומן כ'שבור'."
     )
     PUBLISH_NO_ITEMS = "אין פריטים מוכנים לפרסום בקטגוריה זו."
 
@@ -124,10 +119,7 @@ class MSG:
 
     # --- Confirmation dialogs (SRS §29) ---
     CONFIRM_TEMPLATE = (
-        "⚠️ פעולה זו {description}.\n"
-        "{details}\n"
-        "לא ניתן לבטל פעולה זו.\n\n"
-        "האם להמשיך?"
+        "⚠️ פעולה זו {description}.\n{details}\nלא ניתן לבטל פעולה זו.\n\nהאם להמשיך?"
     )
     CONFIRM_DELETE_MEDIA = "תעביר את הפריט לסל המיחזור"
     CONFIRM_PERM_DELETE_MEDIA = "תמחק את הפריט לצמיתות מהמאגר (לא נוגע בטלגרם)"

@@ -1,31 +1,45 @@
-"""
-app/services/sorting_service.py
-==================================
-Logic for sorting sessions and admin handoff.
-SRS §10.2 (Handoff mechanism)
-"""
+"""Sorting-session lifecycle and controlled handoff logic."""
 
-import logging
-from datetime import datetime, timezone, timedelta
+from __future__ import annotations
 
-from sqlalchemy import select, delete
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.logger import AuditAction, log_action
 from app.database.models.sorting_session import SortingSession
-from app.database.models.admin import Admin
-from app.audit.logger import log_action, AuditAction
 
-logger = logging.getLogger(__name__)
-
-# Session timeout for handoff (SRS §10.2: "active session")
 SESSION_TIMEOUT_MINUTES = 15
 
 
+def _active_threshold() -> datetime:
+    return datetime.now(timezone.utc) - timedelta(minutes=SESSION_TIMEOUT_MINUTES)
+
+
 async def get_active_session(session: AsyncSession) -> SortingSession | None:
-    """Check if any admin has an active sorting session."""
-    threshold = datetime.now(timezone.utc) - timedelta(minutes=SESSION_TIMEOUT_MINUTES)
+    """Return the currently active non-expired session, if one exists."""
     result = await session.execute(
-        select(SortingSession).where(SortingSession.updated_at > threshold).limit(1)
+        select(SortingSession)
+        .where(
+            SortingSession.is_active.is_(True),
+            SortingSession.last_activity_at > _active_threshold(),
+        )
+        .order_by(SortingSession.last_activity_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_session_for_admin(
+    session: AsyncSession, admin_id: int
+) -> SortingSession | None:
+    """Return the active session that belongs to the requesting administrator."""
+    result = await session.execute(
+        select(SortingSession).where(
+            SortingSession.admin_telegram_id == admin_id,
+            SortingSession.is_active.is_(True),
+        )
     )
     return result.scalar_one_or_none()
 
@@ -33,18 +47,28 @@ async def get_active_session(session: AsyncSession) -> SortingSession | None:
 async def start_or_update_session(
     session: AsyncSession,
     admin_id: int,
-    current_media_id: int
+    current_media_id: int,
+    *,
+    taken_over_from: int | None = None,
 ) -> SortingSession:
-    """Start a new session or update existing one for the admin."""
-    # Remove any old sessions for this admin
-    await session.execute(
-        delete(SortingSession).where(SortingSession.admin_telegram_id == admin_id)
-    )
-    
+    """Create or update the requester's active sorting session."""
+    now = datetime.now(timezone.utc)
+    existing = await get_session_for_admin(session, admin_id)
+    if existing is not None:
+        existing.current_media_id = current_media_id
+        existing.last_activity_at = now
+        existing.is_active = True
+        if taken_over_from is not None:
+            existing.taken_over_from = taken_over_from
+        await session.flush()
+        return existing
+
     new_session = SortingSession(
         admin_telegram_id=admin_id,
         current_media_id=current_media_id,
-        updated_at=datetime.now(timezone.utc)
+        is_active=True,
+        taken_over_from=taken_over_from,
+        last_activity_at=now,
     )
     session.add(new_session)
     await session.flush()
@@ -52,49 +76,43 @@ async def start_or_update_session(
 
 
 async def end_session(session: AsyncSession, admin_id: int) -> None:
-    """Clear session when admin exits sorting."""
-    await session.execute(
-        delete(SortingSession).where(SortingSession.admin_telegram_id == admin_id)
-    )
-    await session.flush()
+    """Mark the administrator's active session inactive without deleting audit context."""
+    existing = await get_session_for_admin(session, admin_id)
+    if existing is not None:
+        existing.is_active = False
+        existing.current_media_id = None
+        existing.last_activity_at = datetime.now(timezone.utc)
+        await session.flush()
 
 
 async def handle_handoff(
-    session: AsyncSession,
-    new_admin_id: int,
-    actor_name: str
+    session: AsyncSession, new_admin_id: int, actor_name: str
 ) -> tuple[bool, SortingSession | None]:
-    """
-    SRS §10.2: Handle session handoff.
-    Returns (needs_confirmation, active_session).
-    """
+    """Determine whether another live session must be explicitly taken over."""
+    del actor_name  # Display names are resolved by the Telegram handler when needed.
     active = await get_active_session(session)
-    
-    if not active:
-        return False, None
-        
-    if active.admin_telegram_id == new_admin_id:
-        # Same admin resuming
+    if active is None or active.admin_telegram_id == new_admin_id:
         return False, active
-        
-    # Different admin active — needs confirmation
     return True, active
 
 
 async def confirm_handoff(
-    session: AsyncSession,
-    new_admin_id: int,
-    old_admin_id: int,
-    media_id: int
+    session: AsyncSession, new_admin_id: int, old_admin_id: int, media_id: int
 ) -> None:
-    """Log the handoff and start new session."""
+    """Deactivate the prior session and transfer the selected media to the new owner."""
+    previous = await get_session_for_admin(session, old_admin_id)
+    if previous is not None:
+        previous.is_active = False
+        previous.last_activity_at = datetime.now(timezone.utc)
     await log_action(
         session,
         AuditAction.SORTING_SESSION_HANDOFF,
         actor_telegram_id=new_admin_id,
-        details={
-            "previous_admin_id": old_admin_id,
-            "media_id": media_id
-        }
+        details={"previous_admin_id": old_admin_id, "media_id": media_id},
     )
-    await start_or_update_session(session, new_admin_id, media_id)
+    await start_or_update_session(
+        session,
+        new_admin_id,
+        media_id,
+        taken_over_from=old_admin_id,
+    )

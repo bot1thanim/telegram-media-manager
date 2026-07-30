@@ -1,128 +1,86 @@
-"""
-app/telegram/handlers/import_handler.py
-=========================================
-Handles incoming media messages from the group or DM.
-SRS §9, §9.1: Automatic import, duplicate check.
-"""
+"""Authorized import of supported Telegram videos and photos."""
+
+from __future__ import annotations
 
 import logging
+
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 
 from app.config import config
 from app.database.engine import get_session
+from app.duplicate_detector.detector import create_duplicate_group, scan_for_duplicates
 from app.services.media_service import import_media
-from app.services.permission_service import has_permission, Permission
-from app.duplicate_detector.detector import scan_for_duplicates, create_duplicate_group
+from app.services.permission_service import Permission, has_permission
 from app.telegram.messages import MSG
 
 logger = logging.getLogger(__name__)
 
 
-async def media_import_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Handler for all incoming media.
-    Checks permissions, imports to DB, and triggers duplicate scan.
-    """
+async def media_import_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Import an authorized video or photo from the managed group or a direct message."""
+    del context
     message = update.effective_message
-    if not message:
+    sender = update.effective_user
+    if message is None or sender is None:
         return
 
-    # Check if message is from the managed group (or DM for testing)
-    is_from_group = (message.chat_id == config.GROUP_CHAT_ID)
-    is_dm = (message.chat.type == "private")
-    
-    if not (is_from_group or is_dm):
+    is_from_group = message.chat_id == config.GROUP_CHAT_ID
+    is_direct_message = message.chat.type == "private"
+    if not (is_from_group or is_direct_message):
         return
 
-    # Extract media metadata
-    file_id = None
-    file_unique_id = None
-    media_type = None
-    file_size = 0
-    duration = None
-    width = None
-    height = None
-
-    if message.video:
+    if message.video is not None:
         media_type = "video"
-        file_id = message.video.file_id
-        file_unique_id = message.video.file_unique_id
-        file_size = message.video.file_size
-        duration = message.video.duration
-        width = message.video.width
-        height = message.video.height
+        source = message.video
+        duration = source.duration
     elif message.photo:
         media_type = "photo"
-        # Get highest resolution
-        photo = message.photo[-1]
-        file_id = photo.file_id
-        file_unique_id = photo.file_unique_id
-        file_size = photo.file_size
-        width = photo.width
-        height = photo.height
-    elif message.document:
-        # Check if it's a video/photo sent as document
-        mime = message.document.mime_type or ""
-        if mime.startswith("video/") or mime.startswith("image/"):
-            media_type = "document"
-            file_id = message.document.file_id
-            file_unique_id = message.document.file_unique_id
-            file_size = message.document.file_size
-    elif message.animation:
-        media_type = "animation"
-        file_id = message.animation.file_id
-        file_unique_id = message.animation.file_unique_id
-        file_size = message.animation.file_size
-        duration = message.animation.duration
-
-    if not file_id:
+        source = message.photo[-1]
+        duration = None
+    else:
         return
 
     async with get_session() as session:
-        # Check permission (SRS §7.1: import)
-        user_id = message.from_user.id
-        can_import = await has_permission(session, user_id, config.OWNER_TELEGRAM_ID, Permission.IMPORT)
-        
+        can_import = await has_permission(
+            session,
+            sender.id,
+            config.OWNER_TELEGRAM_ID,
+            Permission.IMPORT,
+        )
         if not can_import:
-            # Silently ignore group messages, reply to DM
-            if is_dm:
+            if is_direct_message:
                 await message.reply_text(MSG.UNAUTHORIZED)
             return
 
-        # Import to DB
         media, is_new = await import_media(
             session=session,
-            file_id=file_id,
-            file_unique_id=file_unique_id,
+            file_id=source.file_id,
+            file_unique_id=source.file_unique_id,
             media_type=media_type,
-            file_size=file_size,
+            file_size=source.file_size or 0,
             caption=message.caption,
             duration=duration,
-            width=width,
-            height=height,
-            uploader_id=user_id,
-            uploader_name=message.from_user.full_name,
+            uploader_id=sender.id,
             message_id=message.message_id,
-            chat_id=message.chat_id
         )
-
-        if not is_new and is_dm:
-            await message.reply_text(MSG.IMPORT_ALREADY_EXISTS.format(status=media.status))
+        if not is_new:
+            if is_direct_message:
+                await message.reply_text(
+                    MSG.IMPORT_ALREADY_EXISTS.format(status=media.status)
+                )
             return
 
-        # Trigger duplicate scan (SRS §12.1)
         potentials = await scan_for_duplicates(session, media)
         if potentials:
-            await create_duplicate_group(session, [media] + potentials)
+            await create_duplicate_group(session, [media, *potentials])
             logger.info("Duplicate group created for media %d", media.id)
 
 
 def register_import_handlers(application) -> None:
-    """Register the import handler."""
+    """Register the video/photo import route only; unsupported payloads are ignored."""
     application.add_handler(
-        MessageHandler(
-            filters.VIDEO | filters.PHOTO | filters.Document.ALL | filters.ANIMATION,
-            media_import_handler
-        )
+        MessageHandler(filters.VIDEO | filters.PHOTO, media_import_handler)
     )

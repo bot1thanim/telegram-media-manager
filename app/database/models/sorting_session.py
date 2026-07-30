@@ -6,9 +6,11 @@ Tracks the global sorting session state (one active at a time in v1).
 """
 
 from datetime import datetime, timezone
-from sqlalchemy import BigInteger, Boolean, Integer, ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column
+
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.orm import Mapped, mapped_column
+
 from app.database.base import Base
 
 

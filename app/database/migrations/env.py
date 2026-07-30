@@ -8,15 +8,15 @@ import os
 import sys
 from logging.config import fileConfig
 
-from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
+from sqlalchemy.ext.asyncio import create_async_engine
 
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 # Import all models so Alembic can detect them
-from app.database.base import Base
 import app.database.models  # noqa: F401 — registers all models
+from app.database.base import Base
 
 config = context.config
 fileConfig(config.config_file_name)

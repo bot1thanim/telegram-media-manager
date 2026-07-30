@@ -6,9 +6,9 @@ Key-value store for runtime-configurable behaviour.
 Values are NEVER hardcoded in application logic.
 """
 
-from sqlalchemy import Text
+from sqlalchemy import JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import JSON
+
 from app.database.base import Base
 
 
