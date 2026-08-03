@@ -18,10 +18,12 @@ services:
       - key: GROUP_CHAT_ID
         sync: false
       - key: GENERAL_TOPIC_THREAD_ID
-        sync: false
+        value: "0"
       - key: DATABASE_URL
         sync: false
-      - key: WEBHOOK_BASE_URL
+      - key: WEBHOOK_URL
         sync: false
       - key: LOG_LEVEL
         value: INFO
+      - key: TIMEZONE
+        value: Asia/Jerusalem
