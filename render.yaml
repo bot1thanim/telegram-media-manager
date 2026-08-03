@@ -3,7 +3,7 @@ services:
     name: telegram-media-manager
     runtime: python
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    preDeployCommand: alembic upgrade head
+    preDeployCommand: python3 -m alembic upgrade head
     startCommand: python -m app.main
     healthCheckPath: /health
     envVars:
