@@ -1,8 +1,7 @@
 """
 app/database/engine.py
 ========================
-Async SQLAlchemy engine and session factory.
-All database access in the application goes through `get_session()`.
+Async SQLAlchemy engine and transaction-scoped session factory.
 """
 
 import logging
@@ -25,20 +24,26 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
 def init_engine(database_url: str) -> None:
-    """
-    Initialise the async engine and session factory.
-    Called once at application startup from app/main.py.
-    """
+    """Create the single application-owned asynchronous database engine."""
     global _engine, _session_factory
 
-    _engine = create_async_engine(
-        database_url,
-        echo=False,
-        pool_pre_ping=True,  # detect stale connections
-        pool_size=5,
-        max_overflow=10,
-    )
+    if _engine is not None:
+        raise RuntimeError("Database engine is already initialized.")
 
+    engine_options: dict[str, object] = {"echo": False}
+    if database_url.startswith("postgresql+asyncpg://"):
+        engine_options.update(
+            {
+                "pool_pre_ping": True,
+                "pool_size": 3,
+                "max_overflow": 2,
+                "pool_timeout": 30,
+                "pool_recycle": 1800,
+                "connect_args": {"timeout": 15, "command_timeout": 30},
+            }
+        )
+
+    _engine = create_async_engine(database_url, **engine_options)
     _session_factory = async_sessionmaker(
         bind=_engine,
         class_=AsyncSession,
@@ -46,30 +51,24 @@ def init_engine(database_url: str) -> None:
         autoflush=False,
         autocommit=False,
     )
-
-    logger.info("Database engine initialised.")
+    logger.info("Database engine initialized.")
 
 
 def get_engine() -> AsyncEngine:
+    """Return the initialized engine or fail loudly on an invalid lifecycle."""
     if _engine is None:
         raise RuntimeError(
-            "Database engine has not been initialised. Call init_engine() first."
+            "Database engine has not been initialized. Call init_engine() first."
         )
     return _engine
 
 
 @asynccontextmanager
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    """
-    Async context manager that yields a database session.
-
-    Usage:
-        async with get_session() as session:
-            result = await session.execute(...)
-    """
+    """Yield one transaction-scoped async session with rollback on failure."""
     if _session_factory is None:
         raise RuntimeError(
-            "Session factory has not been initialised. Call init_engine() first."
+            "Session factory has not been initialized. Call init_engine() first."
         )
 
     async with _session_factory() as session:
@@ -82,20 +81,18 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def create_all_tables() -> None:
-    """
-    Create all tables defined in the models (used for testing / initial setup).
-    In production, Alembic migrations handle schema changes.
-    """
-    engine = get_engine()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("All tables created (or already exist).")
+    """Create ORM tables for isolated tests; production uses Alembic migrations."""
+    async with get_engine().begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    logger.info("All tables created or already exist.")
 
 
 async def close_engine() -> None:
-    """Dispose the engine — called on application shutdown."""
-    global _engine
+    """Dispose all pooled connections and reset global lifecycle state."""
+    global _engine, _session_factory
+
     if _engine is not None:
         await _engine.dispose()
-        _engine = None
-        logger.info("Database engine closed.")
+    _engine = None
+    _session_factory = None
+    logger.info("Database engine closed.")

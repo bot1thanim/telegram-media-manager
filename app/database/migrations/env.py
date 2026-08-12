@@ -9,6 +9,7 @@ import sys
 from logging.config import fileConfig
 
 from alembic import context
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 # Add project root to path
@@ -25,15 +26,23 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    url = os.environ.get("DATABASE_URL", "")
-    if not url:
+    """Return a PostgreSQL URL compatible with SQLAlchemy's asyncpg dialect."""
+    raw_url = os.environ.get("DATABASE_URL", "")
+    if not raw_url:
         raise RuntimeError("DATABASE_URL environment variable is not set.")
-    # Ensure asyncpg driver
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
-    elif url.startswith("postgresql://") and "+asyncpg" not in url:
-        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    return url
+
+    url = make_url(raw_url)
+    if url.get_backend_name() not in {"postgresql", "postgres"}:
+        raise RuntimeError("DATABASE_URL must be a PostgreSQL connection URL.")
+
+    query = dict(url.query)
+    sslmode = query.pop("sslmode", None)
+    if sslmode is not None and "ssl" not in query:
+        query["ssl"] = sslmode
+    return url.set(
+        drivername="postgresql+asyncpg",
+        query=query,
+    ).render_as_string(hide_password=False)
 
 
 def run_migrations_offline() -> None:

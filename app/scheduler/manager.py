@@ -11,6 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import select
+from sqlalchemy.engine import make_url
 from telegram.ext import Application
 
 from app.audit.logger import AuditAction, log_action
@@ -28,15 +29,28 @@ _worker: PublishWorker | None = None
 
 
 def _to_sync_database_url(database_url: str) -> str:
-    """Convert the async SQLAlchemy URL to the synchronous APScheduler URL."""
-    if database_url.startswith("postgresql+asyncpg://"):
-        return database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
-    if database_url.startswith("postgres://"):
-        return database_url.replace("postgres://", "postgresql+psycopg://", 1)
-    if database_url.startswith("postgresql://"):
-        return database_url.replace("postgresql://", "postgresql+psycopg://", 1)
-    if database_url.startswith("sqlite+aiosqlite://"):
-        return database_url.replace("sqlite+aiosqlite://", "sqlite://", 1)
+    """Convert the async SQLAlchemy URL to APScheduler's synchronous psycopg URL.
+
+    The application engine uses asyncpg, which expects ``ssl``. APScheduler's
+    SQLAlchemy job store uses psycopg, which expects libpq's ``sslmode``.
+    """
+    url = make_url(database_url)
+    query = dict(url.query)
+
+    if url.get_backend_name() == "postgresql":
+        ssl = query.pop("ssl", None)
+        if ssl is not None:
+            query["sslmode"] = ssl
+        return url.set(
+            drivername="postgresql+psycopg",
+            query=query,
+        ).render_as_string(hide_password=False)
+
+    if url.drivername == "sqlite+aiosqlite":
+        return url.set(drivername="sqlite", query=query).render_as_string(
+            hide_password=False
+        )
+
     return database_url
 
 

@@ -12,8 +12,6 @@ import os
 import signal
 import sys
 
-from dotenv import load_dotenv
-
 from aiohttp import web
 from telegram.error import TelegramError
 from telegram.ext import Application, MessageHandler, filters
@@ -127,18 +125,19 @@ async def main() -> None:
     application = await build_application()
     worker: PublishWorker | None = None
     runner: web.AppRunner | None = None
+    application_initialized = False
     application_started = False
 
     try:
-        # PTB must be initialized before calling Bot.set_webhook or processing updates.
+        # PTB must be initialized before processing Telegram updates.
         await application.initialize()
+        application_initialized = True
         await seed_default_settings()
 
         worker = PublishWorker(application)
         application.bot_data["publish_worker"] = worker
         init_scheduler(application, worker)
 
-        await set_webhook_with_retry(application)
         await application.start()
         application_started = True
 
@@ -154,6 +153,9 @@ async def main() -> None:
         await site.start()
         logger.info("HTTP server listening on 0.0.0.0:%d", port)
 
+        # Register only after the HTTP listener is ready to accept Telegram updates.
+        await set_webhook_with_retry(application)
+
         stop_event = asyncio.Event()
         install_shutdown_signals(stop_event)
         await stop_event.wait()
@@ -165,7 +167,7 @@ async def main() -> None:
             await worker.shutdown()
         if application_started:
             await application.stop()
-        if application._initialized:
+        if application_initialized:
             await application.shutdown()
         await close_engine()
         logger.info("Application shutdown completed")

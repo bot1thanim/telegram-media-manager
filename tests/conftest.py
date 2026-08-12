@@ -4,7 +4,18 @@ tests/conftest.py
 Shared pytest fixtures for unit and integration tests.
 """
 
+import os
 from unittest.mock import AsyncMock
+
+os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test-token")
+os.environ.setdefault("OWNER_TELEGRAM_ID", "1")
+os.environ.setdefault("WEBHOOK_SECRET_TOKEN", "test-webhook-secret")
+os.environ.setdefault("GROUP_CHAT_ID", "-1001")
+os.environ.setdefault("GENERAL_TOPIC_THREAD_ID", "1")
+os.environ.setdefault(
+    "DATABASE_URL", "postgresql://test:test@localhost:5432/test?sslmode=require"
+)
+os.environ.setdefault("WEBHOOK_BASE_URL", "https://example.test")
 
 import pytest
 import pytest_asyncio
