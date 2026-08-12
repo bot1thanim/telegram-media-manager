@@ -3,7 +3,7 @@
 import pytest
 from sqlalchemy.engine import make_url
 
-from app.config import normalize_database_url
+from app.config import Config, normalize_database_url
 from app.database.engine import close_engine, get_engine, init_engine
 from app.scheduler.manager import _to_sync_database_url
 
@@ -17,6 +17,26 @@ def test_normalize_database_url_converts_libpq_sslmode_for_asyncpg() -> None:
     assert url.drivername == "postgresql+asyncpg"
     assert url.query["ssl"] == "require"
     assert "sslmode" not in url.query
+
+
+def test_source_and_target_group_ids_fall_back_to_legacy_group(monkeypatch) -> None:
+    monkeypatch.delenv("SOURCE_GROUP_CHAT_ID", raising=False)
+    monkeypatch.delenv("TARGET_GROUP_CHAT_ID", raising=False)
+
+    runtime_config = Config()
+
+    assert runtime_config.SOURCE_GROUP_CHAT_ID == runtime_config.GROUP_CHAT_ID
+    assert runtime_config.TARGET_GROUP_CHAT_ID == runtime_config.GROUP_CHAT_ID
+
+
+def test_source_and_target_group_ids_accept_explicit_values(monkeypatch) -> None:
+    monkeypatch.setenv("SOURCE_GROUP_CHAT_ID", "-100200")
+    monkeypatch.setenv("TARGET_GROUP_CHAT_ID", "-100300")
+
+    runtime_config = Config()
+
+    assert runtime_config.SOURCE_GROUP_CHAT_ID == -100200
+    assert runtime_config.TARGET_GROUP_CHAT_ID == -100300
 
 
 def test_scheduler_url_converts_asyncpg_ssl_to_psycopg_sslmode() -> None:

@@ -37,6 +37,29 @@ def _optional(name: str, default: str) -> str:
     return os.environ.get(name, default)
 
 
+def _required_int(name: str) -> int:
+    """Read a required numeric Telegram identifier without exposing its value."""
+    try:
+        return int(_require(name))
+    except ValueError as exc:
+        raise RuntimeError(
+            f"[STARTUP ERROR] {name} must be a numeric Telegram identifier."
+        ) from exc
+
+
+def _optional_int(name: str, fallback: int) -> int:
+    """Read an optional numeric Telegram identifier or use a compatibility fallback."""
+    raw_value = os.environ.get(name)
+    if raw_value in (None, ""):
+        return fallback
+    try:
+        return int(raw_value)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"[STARTUP ERROR] {name} must be a numeric Telegram Chat ID."
+        ) from exc
+
+
 def normalize_database_url(raw_url: str) -> str:
     """Return a PostgreSQL URL compatible with SQLAlchemy's asyncpg dialect.
 
@@ -75,6 +98,8 @@ class Config:
     OWNER_TELEGRAM_ID: int
     WEBHOOK_SECRET_TOKEN: str
     GROUP_CHAT_ID: int
+    SOURCE_GROUP_CHAT_ID: int
+    TARGET_GROUP_CHAT_ID: int
     GENERAL_TOPIC_THREAD_ID: int
 
     # --- Database ---
@@ -92,27 +117,17 @@ class Config:
         self.DATABASE_URL = normalize_database_url(_require("DATABASE_URL"))
         self.WEBHOOK_BASE_URL = _require("WEBHOOK_BASE_URL")
 
-        try:
-            self.OWNER_TELEGRAM_ID = int(_require("OWNER_TELEGRAM_ID"))
-        except ValueError as exc:
-            raise RuntimeError(
-                "[STARTUP ERROR] OWNER_TELEGRAM_ID must be a numeric Telegram User ID."
-            ) from exc
+        self.OWNER_TELEGRAM_ID = _required_int("OWNER_TELEGRAM_ID")
+        self.GROUP_CHAT_ID = _required_int("GROUP_CHAT_ID")
+        self.GENERAL_TOPIC_THREAD_ID = _required_int("GENERAL_TOPIC_THREAD_ID")
 
-        try:
-            self.GROUP_CHAT_ID = int(_require("GROUP_CHAT_ID"))
-        except ValueError as exc:
-            raise RuntimeError(
-                "[STARTUP ERROR] GROUP_CHAT_ID must be a numeric Telegram Chat ID."
-            ) from exc
-
-        try:
-            self.GENERAL_TOPIC_THREAD_ID = int(_require("GENERAL_TOPIC_THREAD_ID"))
-        except ValueError as exc:
-            raise RuntimeError(
-                "[STARTUP ERROR] GENERAL_TOPIC_THREAD_ID must be a numeric thread ID."
-            ) from exc
-
+        # GROUP_CHAT_ID remains the compatibility default for pre-sync deployments.
+        self.SOURCE_GROUP_CHAT_ID = _optional_int(
+            "SOURCE_GROUP_CHAT_ID", self.GROUP_CHAT_ID
+        )
+        self.TARGET_GROUP_CHAT_ID = _optional_int(
+            "TARGET_GROUP_CHAT_ID", self.GROUP_CHAT_ID
+        )
         self.LOG_LEVEL = _optional("LOG_LEVEL", "INFO").upper()
         logger.info("Configuration loaded successfully.")
 

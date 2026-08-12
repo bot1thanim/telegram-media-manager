@@ -78,6 +78,7 @@ class CB:
     PUB_SCHED_ORDER = "pub_sched_order:"  # + order_mode
     PUB_CAT_SELECT = "pub_cat:"  # + category ID
     PUB_SCHED_CAT_SELECT = "pub_sched_cat:"  # + category ID
+    PUB_ALL_CATEGORIES = "pub_all_categories"
 
     # Recycle bin
     REC_RESTORE = "rec_restore:"  # + media_id
@@ -252,6 +253,11 @@ def publish_menu_keyboard(has_running_job: bool = False) -> InlineKeyboardMarkup
     rows = [
         [InlineKeyboardButton("📢 פרסם נושא", callback_data=CB.PUB_TOPIC)],
         [InlineKeyboardButton("📢📢 פרסם הכל", callback_data=CB.PUB_ALL)],
+        [
+            InlineKeyboardButton(
+                "📤 שלח לכל הקטגוריות", callback_data=CB.PUB_ALL_CATEGORIES
+            )
+        ],
         [InlineKeyboardButton("⏰ תזמן פרסום", callback_data=CB.PUB_SCHEDULE)],
     ]
     if has_running_job:

@@ -18,6 +18,10 @@ services:
         sync: false
       - key: GROUP_CHAT_ID
         sync: false
+      - key: SOURCE_GROUP_CHAT_ID
+        sync: false
+      - key: TARGET_GROUP_CHAT_ID
+        sync: false
       - key: GENERAL_TOPIC_THREAD_ID
         sync: false
       - key: DATABASE_URL

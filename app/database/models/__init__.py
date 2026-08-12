@@ -16,12 +16,15 @@ from app.database.models.duplicate_group import (
     duplicate_group_members,
 )
 from app.database.models.media import Media, MediaStatus, MediaType
+from app.database.models.media_delivery import MediaDelivery, MediaDeliveryState
 from app.database.models.publish_job import (
     PublishJob,
     PublishJobStatus,
     PublishQueueItem,
     PublishQueueItemState,
 )
+from app.database.models.sync_run import SyncRun, SyncRunStatus, SyncRunType
+from app.database.models.topic_catalog import TopicCatalog
 from app.database.models.setting import (
     SETTING_DEFAULTS,
     Setting,
@@ -40,6 +43,8 @@ __all__ = [
     "DuplicateGroup",
     "DuplicateGroupStatus",
     "Media",
+    "MediaDelivery",
+    "MediaDeliveryState",
     "MediaStatus",
     "MediaType",
     "PublishJob",
@@ -49,7 +54,11 @@ __all__ = [
     "Setting",
     "SettingKey",
     "SortingSession",
+    "SyncRun",
+    "SyncRunStatus",
+    "SyncRunType",
     "Tag",
+    "TopicCatalog",
     "duplicate_group_members",
     "media_tags",
 ]

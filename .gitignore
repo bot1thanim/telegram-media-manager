@@ -4,6 +4,10 @@
 .env.*
 !.env.example
 
+# Local Telegram User API authorization used by the one-time importer
+*.session
+*.session-journal
+
 # Python
 __pycache__/
 *.pyc

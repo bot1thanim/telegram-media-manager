@@ -52,6 +52,7 @@ async def import_media(
         duration_seconds=duration,
         uploaded_by_user_id=uploader_id,
         source_message_id=message_id,
+        source_group_id=chat_id,
         status=MediaStatus.WAITING_CATEGORIZATION.value,
     )
     session.add(media)

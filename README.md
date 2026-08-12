@@ -1,6 +1,6 @@
 # Telegram Media Manager Bot
 
-A full-featured Telegram bot for managing a video and photo library using Telegram's Topics (forum threads) as categories.
+A full-featured Telegram bot for managing a video, photo, and document library using Telegram Forum Topics as categories. It supports a one-time historical import from a source forum group, live source synchronization, and a name-matched broadcast to a separate target forum group.
 
 ## Architecture
 
@@ -46,10 +46,15 @@ See `.env.example` for all required variables.
 | `TELEGRAM_BOT_TOKEN` | ✅ | Bot token from @BotFather |
 | `OWNER_TELEGRAM_ID` | ✅ | Numeric Telegram User ID of the owner |
 | `WEBHOOK_SECRET_TOKEN` | ✅ | Secret for validating webhook requests |
-| `GROUP_CHAT_ID` | ✅ | Telegram Chat ID of the managed group |
+| `GROUP_CHAT_ID` | ✅ | Legacy managed-group ID; used as the source and target fallback for backward compatibility |
+| `SOURCE_GROUP_CHAT_ID` | ❌ | Source Forum group ID for media ingestion; defaults to `GROUP_CHAT_ID` |
+| `TARGET_GROUP_CHAT_ID` | ❌ | Target Forum group ID for publishing; defaults to `GROUP_CHAT_ID` |
 | `GENERAL_TOPIC_THREAD_ID` | ✅ | Thread ID of the General topic (usually 1) |
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |
 | `WEBHOOK_BASE_URL` | ✅ | Public URL of this service |
+| `TELEGRAM_API_ID` | Local importer only | Telegram User API application ID; never configure in Render |
+| `TELEGRAM_API_HASH` | Local importer only | Telegram User API application secret; never configure in Render |
+| `TELEGRAM_IMPORT_SESSION_PATH` | ❌ | Local-only Telethon session location; defaults outside the repository |
 | `LOG_LEVEL` | ❌ | Logging level (default: INFO) |
 
 ### Running Locally
@@ -64,6 +69,20 @@ ngrok http 8080
 # Then run the bot
 python -m app.main
 ```
+
+### Topic Synchronization
+
+The live webhook catalogues newly created and renamed topics in the configured source and target groups. New videos, photos, and documents sent under a catalogued source topic are placed directly in the matching internal category and are made ready for publication.
+
+For existing history, run the one-time local importer from a machine you control. Create a Telegram User API application at [my.telegram.org](https://my.telegram.org), set `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` only in your local `.env`, and then run:
+
+```bash
+python -m app.sync.topic_importer
+```
+
+The command prompts locally for Telegram authorization when needed. Do not send an OTP, password, session file, API hash, or import session string through Telegram, GitHub, Render, or chat. The importer records source and target topic catalogs plus source media identities, then the bot's **📤 שלח לכל הקטגוריות** button matches target names, creates a missing target topic when permitted, and sends category media with a durable exception report. Full matching, duplicate, and recovery rules are documented in [docs/TOPIC_SYNC_ARCHITECTURE.md](docs/TOPIC_SYNC_ARCHITECTURE.md).
+
+The bot must be a member of both groups. In the target group, grant it permission to manage topics and send media. In the source group, disable Privacy Mode in BotFather if the bot must receive ordinary member messages live.
 
 ### Running Tests
 
@@ -111,6 +130,7 @@ telegram-media-manager/
 │   ├── services/                  # Business logic (testable without Telegram)
 │   ├── duplicate_detector/        # Isolated duplicate detection module
 │   ├── publishing/                # Publish queue builder and worker
+│   ├── sync/                      # Topic catalog, matching, historical import, broadcast
 │   ├── scheduler/                 # APScheduler setup and jobs
 │   ├── backup/                    # JSON export/import
 │   └── audit/                     # Central audit logging

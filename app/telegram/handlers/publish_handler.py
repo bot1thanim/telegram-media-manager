@@ -15,6 +15,10 @@ from app.database.engine import get_session
 from app.database.models.publish_job import PublishJob, PublishJobStatus
 from app.publishing.queue_builder import OrderMode, build_queue
 from app.scheduler.manager import schedule_publish_job
+from app.sync.topic_broadcaster import (
+    BroadcastAlreadyRunningError,
+    broadcast_all_categories,
+)
 from app.services.category_service import get_all_categories
 from app.services.permission_service import Permission, require_permission
 from app.telegram.keyboards import (
@@ -402,6 +406,52 @@ async def handle_schedule_time_input(
     return True
 
 
+async def _run_all_categories_broadcast(
+    *, chat_id: int, requested_by_user_id: int, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Run the long publication outside the callback deadline and report its result."""
+    try:
+        report = await broadcast_all_categories(
+            context.bot, requested_by_user_id=requested_by_user_id
+        )
+    except BroadcastAlreadyRunningError:
+        await context.bot.send_message(
+            chat_id=chat_id, text=MSG.TOPIC_BROADCAST_ALREADY_RUNNING
+        )
+    except Exception:
+        logger.exception("All-categories broadcast failed before a report was delivered")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="השליחה לכל הקטגוריות נכשלה לפני סיום. הפרטים נרשמו בדוח הסנכרון.",
+        )
+    else:
+        await context.bot.send_message(chat_id=chat_id, text=report.to_telegram_text())
+
+
+@require_permission(Permission.PUBLISH)
+async def start_all_categories_broadcast(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Start name-matched category broadcast without blocking Telegram's callback."""
+    query = update.callback_query
+    message = query.message
+    user = update.effective_user
+    if message is None or user is None:
+        await query.answer(MSG.ERROR_GENERIC, show_alert=True)
+        return
+    await query.answer("השליחה התחילה.")
+    await query.edit_message_text(MSG.TOPIC_BROADCAST_STARTED)
+    context.application.create_task(
+        _run_all_categories_broadcast(
+            chat_id=message.chat_id,
+            requested_by_user_id=user.id,
+            context=context,
+        ),
+        update=update,
+        name=f"topic-broadcast-{user.id}",
+    )
+
+
 @require_permission(Permission.PUBLISH)
 async def stop_publish_job(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Stop the sole active job after persisting terminal status first."""
@@ -448,6 +498,11 @@ def register_publish_handlers(application) -> None:
     )
     application.add_handler(
         CallbackQueryHandler(prompt_publish_all, pattern=f"^{CB.PUB_ALL}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            start_all_categories_broadcast, pattern=f"^{CB.PUB_ALL_CATEGORIES}$"
+        )
     )
     application.add_handler(
         CallbackQueryHandler(

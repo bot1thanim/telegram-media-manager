@@ -30,11 +30,15 @@ from app.telegram.handlers.backup_handler import register_backup_handlers
 from app.telegram.handlers.category_handler import register_category_handlers
 from app.telegram.handlers.dashboard_handler import register_dashboard_handlers
 from app.telegram.handlers.duplicate_handler import register_duplicate_handlers
+from app.telegram.handlers.historical_sync_handler import (
+    register_historical_sync_handlers,
+)
 from app.telegram.handlers.import_handler import register_import_handlers
 from app.telegram.handlers.main_menu import register_main_menu_handlers
 from app.telegram.handlers.publish_handler import register_publish_handlers
 from app.telegram.handlers.recycle_bin_handler import register_recycle_bin_handlers
 from app.telegram.handlers.sorting_handler import register_sorting_handlers
+from app.telegram.handlers.topic_sync_handler import register_topic_sync_handlers
 from app.telegram.webhook_server import build_aiohttp_app
 
 logging.basicConfig(
@@ -65,6 +69,8 @@ async def build_application() -> Application:
     application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
 
     register_main_menu_handlers(application)
+    register_historical_sync_handlers(application)
+    register_topic_sync_handlers(application)
     register_import_handlers(application)
     register_duplicate_handlers(application)
     register_sorting_handlers(application)

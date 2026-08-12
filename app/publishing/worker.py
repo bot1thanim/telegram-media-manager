@@ -87,7 +87,7 @@ class PublishWorker:
                         media_type=media_type,
                         file_id=file_id,
                         caption=caption,
-                        chat_id=config.GROUP_CHAT_ID,
+                        chat_id=config.TARGET_GROUP_CHAT_ID,
                         thread_id=thread_id,
                     )
                 except RetryAfter as exc:
@@ -301,4 +301,8 @@ class PublishWorker:
             return await self.application.bot.send_video(video=file_id, **common_kwargs)
         if media_type == "photo":
             return await self.application.bot.send_photo(photo=file_id, **common_kwargs)
+        if media_type == "document":
+            return await self.application.bot.send_document(
+                document=file_id, **common_kwargs
+            )
         raise ValueError(f"Unsupported media type: {media_type}")

@@ -8,7 +8,7 @@ Includes the MediaStatus enum that represents the full state machine.
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, ForeignKey, Index, Integer, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, Integer, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -40,6 +40,7 @@ class MediaStatus(str, enum.Enum):
 class MediaType(str, enum.Enum):
     VIDEO = "video"
     PHOTO = "photo"
+    DOCUMENT = "document"
 
 
 class Media(Base):
@@ -48,12 +49,23 @@ class Media(Base):
         UniqueConstraint("file_unique_id", name="uq_media_file_unique_id"),
         Index("ix_media_category_id", "category_id"),
         Index("ix_media_status_category", "status", "category_id"),
+        Index(
+            "uq_media_source_message",
+            "source_group_id",
+            "source_message_id",
+            unique=True,
+            postgresql_where=text(
+                "source_group_id IS NOT NULL AND source_message_id IS NOT NULL"
+            ),
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     file_id: Mapped[str] = mapped_column(Text, nullable=False)
     file_unique_id: Mapped[str] = mapped_column(Text, nullable=False)
-    media_type: Mapped[str] = mapped_column(Text, nullable=False)  # "video" | "photo"
+    media_type: Mapped[str] = mapped_column(
+        Text, nullable=False
+    )  # "video" | "photo" | "document"
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     file_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     caption: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -62,6 +74,8 @@ class Media(Base):
         TIMESTAMP(timezone=True), default=_utcnow, nullable=False
     )
     source_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source_group_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source_thread_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     category_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
     )
