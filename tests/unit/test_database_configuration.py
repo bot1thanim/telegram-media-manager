@@ -42,3 +42,13 @@ async def test_engine_lifecycle_resets_global_state() -> None:
 
     init_engine("sqlite+aiosqlite:///:memory:")
     await close_engine()
+
+
+def test_http_transport_loggers_do_not_emit_sensitive_urls_at_info_level() -> None:
+    """Telegram's HTTP URLs contain a bot token and must not reach Render logs."""
+    import logging
+
+    import app.main  # noqa: F401 - importing configures the application loggers
+
+    assert not logging.getLogger("httpx").isEnabledFor(logging.INFO)
+    assert not logging.getLogger("httpcore").isEnabledFor(logging.INFO)
