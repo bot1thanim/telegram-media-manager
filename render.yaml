@@ -3,8 +3,9 @@ services:
     name: telegram-media-manager
     runtime: python
     buildCommand: pip install --no-cache-dir -r requirements.txt
-    preDeployCommand: alembic upgrade head
-    startCommand: python -m app.main
+    # The free Render plan gates Pre-Deploy Commands. Run idempotent Alembic
+    # upgrades before process startup so every deployment applies its schema.
+    startCommand: alembic upgrade head && python -m app.main
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
