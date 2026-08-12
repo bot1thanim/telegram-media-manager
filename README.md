@@ -84,6 +84,10 @@ The command prompts locally for Telegram authorization when needed. Do not send 
 
 The bot must be a member of both groups. In the target group, grant it permission to manage topics and send media. In the source group, disable Privacy Mode in BotFather if the bot must receive ordinary member messages live.
 
+### Direct upload to a selected category
+
+An Owner or an Admin with the `import` permission can open **ניהול מדיה → ⬆️ העלאה לקטגוריה**, select a category, and then send videos, photos, or documents to the bot in a private chat. Each new item is assigned to that selected category immediately and marked ready to publish. The selection is per user, expires after 12 hours, and can be ended with **סיים העלאה**. Exact duplicate files are not stored a second time.
+
 ### Running Tests
 
 ```bash
