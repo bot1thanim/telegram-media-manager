@@ -15,13 +15,13 @@ apscheduler==3.10.4
 cachetools==5.5.0
 
 # HTTP server (used by PTB webhook mode)
-aiohttp==3.10.10
+aiohttp==3.14.3
 
 # Utilities
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 
 # Testing
 aiosqlite==0.22.1
-pytest==8.3.3
-pytest-asyncio==0.24.0
+pytest==9.0.3
+pytest-asyncio==1.4.0
 pytest-mock==3.14.0
