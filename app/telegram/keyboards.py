@@ -30,6 +30,10 @@ class CB:
     SORT_RESUME = "sort_resume"
     SEARCH = "search"
     FILTER = "filter"
+    DIRECT_UPLOAD = "direct_upload"
+    DIRECT_UPLOAD_CATEGORY = "direct_upload_cat:"  # + category ID
+    DIRECT_UPLOAD_PAGE = "direct_upload_page:"  # + page number
+    DIRECT_UPLOAD_CANCEL = "direct_upload_cancel"
 
     # Sorting actions
     SORT_PREV = "sort_prev"
@@ -162,6 +166,11 @@ def media_mgmt_keyboard() -> InlineKeyboardMarkup:
         [
             [InlineKeyboardButton("🆕 מיון חדש", callback_data=CB.SORT_NEW)],
             [InlineKeyboardButton("▶️ המשך מיון", callback_data=CB.SORT_RESUME)],
+            [
+                InlineKeyboardButton(
+                    "⬆️ העלאה לקטגוריה", callback_data=CB.DIRECT_UPLOAD
+                )
+            ],
             [InlineKeyboardButton("⬅️ חזרה", callback_data=CB.MAIN_MENU)],
         ]
     )
@@ -226,6 +235,20 @@ def category_select_keyboard(
 
     rows.append([InlineKeyboardButton("⬅️ חזרה", callback_data=back_cb)])
     return InlineKeyboardMarkup(rows)
+
+
+def direct_upload_prompt_keyboard() -> InlineKeyboardMarkup:
+    """Let an uploader explicitly leave the one-category upload mode."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "✖️ סיים העלאה", callback_data=CB.DIRECT_UPLOAD_CANCEL
+                )
+            ],
+            [InlineKeyboardButton("⬅️ ניהול מדיה", callback_data=CB.MEDIA_MGMT)],
+        ]
+    )
 
 
 def confirm_keyboard(

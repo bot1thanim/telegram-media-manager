@@ -12,9 +12,11 @@ from app.config import config
 from app.database.engine import get_session
 from app.database.models.topic_catalog import TopicCatalog
 from app.duplicate_detector.detector import create_duplicate_group, scan_for_duplicates
-from app.services.media_service import import_media
+from app.services.category_service import get_category_by_id
+from app.services.media_service import categorize_media, import_media
 from app.services.permission_service import Permission, has_permission
 from app.sync.services import ensure_source_category, ingest_source_media
+from app.telegram.handlers.direct_upload_handler import get_pending_upload_category_id
 from app.telegram.messages import MSG
 
 logger = logging.getLogger(__name__)
@@ -129,6 +131,18 @@ async def media_import_handler(
             await message.reply_text(MSG.UNAUTHORIZED)
             return
 
+        selected_category_id = get_pending_upload_category_id(context)
+        selected_category = (
+            await get_category_by_id(session, selected_category_id)
+            if selected_category_id is not None
+            else None
+        )
+        if selected_category_id is not None and selected_category is None:
+            context.user_data.pop("direct_upload_category_id", None)
+            context.user_data.pop("direct_upload_started_at", None)
+            await message.reply_text(MSG.DIRECT_UPLOAD_CATEGORY_MISSING)
+            return
+
         media, is_new = await import_media(
             session=session,
             file_id=source.file_id,
@@ -142,13 +156,31 @@ async def media_import_handler(
             chat_id=message.chat_id,
         )
         if not is_new:
-            await message.reply_text(MSG.IMPORT_ALREADY_EXISTS.format(status=media.status))
+            reply = (
+                MSG.DIRECT_UPLOAD_DUPLICATE.format(status=media.status)
+                if selected_category is not None
+                else MSG.IMPORT_ALREADY_EXISTS.format(status=media.status)
+            )
+            await message.reply_text(reply)
             return
+
+        if selected_category is not None:
+            await categorize_media(
+                session,
+                media.id,
+                selected_category.id,
+                actor_id=sender.id,
+            )
 
         potentials = await scan_for_duplicates(session, media)
         if potentials:
             await create_duplicate_group(session, [media, *potentials])
             logger.info("Duplicate group created for media %d", media.id)
+
+        if selected_category is not None:
+            await message.reply_text(
+                MSG.DIRECT_UPLOAD_SAVED.format(category_name=selected_category.name)
+            )
 
 
 def register_import_handlers(application) -> None:
